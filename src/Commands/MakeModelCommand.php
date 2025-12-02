@@ -1,6 +1,6 @@
 <?php
 
-namespace FarhanIsrakYen\LaravelModelMaker\Commands\MakeModelCommand;
+namespace FarhanIsrakYen\LaravelModelMaker\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
