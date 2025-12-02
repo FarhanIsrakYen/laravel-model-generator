@@ -1,6 +1,6 @@
 <?php
 
-namespace YourVendor\LaravelModelMaker\Commands;
+namespace FarhanIsrakYen\LaravelModelMaker\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
@@ -375,3 +375,4 @@ PHP;
         return $stub;
     }
 }
+
