@@ -22,9 +22,9 @@
   },
   "extra": {
     "laravel": {
-      "commands": [
-        "FarhanIsrak\\LaravelModelBender\\Console\\MakeModelCommand"
-      ]
+        "providers": [
+            "FarhanIsrakYen\\LaravelModelMaker\\LaravelModelMakerServiceProvider"
+        ]
     }
   },
   "minimum-stability": "stable",
