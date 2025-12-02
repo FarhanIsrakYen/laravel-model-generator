@@ -1,24 +1,32 @@
 {
-    "name": "farhanisrakyen/laravel-model-bender",
-    "description": "Interactive Laravel model generator with fields, enums, casts, and relationships",
-    "type": "library",
-    "license": "MIT",
-    "autoload": {
-        "psr-4": {
-            "FarhanIsrakYen\\LaravelModelMaker\\": "src/"
-        }
-    },
-    "extra": {
-        "laravel": {
-            "providers": [
-                "FarhanIsrakYen\\LaravelModelMaker\\Commands\\MakeModelCommand"
-            ]
-        }
-    },
-    "authors": [
-        {
-            "name": "FarhanIsrakYen"
-        }
-    ],
-    "require": {}
+  "name": "farhanisrakyen/laravel-model-bender",
+  "description": "Interactive Laravel model generator with fields, enums, casts, relationships, and migrations",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Farhan Israk",
+      "email": "farhanisrak.yen29@gmail.com"
+    }
+  ],
+  "require": {
+    "php": ">=8.1",
+    "illuminate/support": "^10.0",
+    "illuminate/console": "^10.0",
+    "illuminate/filesystem": "^10.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "FarhanIsrak\\LaravelModelBender\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "commands": [
+        "FarhanIsrak\\LaravelModelBender\\Console\\MakeModelCommand"
+      ]
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
 }
