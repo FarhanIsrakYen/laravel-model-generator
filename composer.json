@@ -1,0 +1,24 @@
+{
+    "name": "farhan/laravel-model-maker",
+    "description": "Interactive Laravel model generator with fields, enums, casts, and relationships",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Farhan\\LaravelModelMaker\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "YourVendor\\LaravelModelMaker\\Commands\\MakeModelCommand"
+            ]
+        }
+    },
+    "authors": [
+        {
+            "name": "Farhan"
+        }
+    ],
+    "require": {}
+}
