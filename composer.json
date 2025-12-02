@@ -14,15 +14,15 @@
   },
   "autoload": {
     "psr-4": {
-      "FarhanIsrak\\LaravelModelBender\\": "src/"
+        "FarhanIsrakYen\\LaravelModelMaker\\": "src/"
     }
   },
   "extra": {
-    "laravel": {
-        "providers": [
-            "FarhanIsrakYen\\LaravelModelMaker\\LaravelModelMakerServiceProvider"
-        ]
-    }
+      "laravel": {
+          "providers": [
+              "FarhanIsrakYen\\LaravelModelMaker\\LaravelModelMakerServiceProvider"
+          ]
+      }
   },
   "minimum-stability": "stable",
   "prefer-stable": true
