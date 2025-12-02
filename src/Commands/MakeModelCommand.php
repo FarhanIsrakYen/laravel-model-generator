@@ -24,7 +24,6 @@ class MakeModelCommand extends Command
 
     public function handle()
     {
-        // Parse name and prepare directories/namespaces
         $raw = $this->argument('name');
         $path = str_replace('\\', '/', $raw);
         $className = Str::afterLast($path, '/');
@@ -91,11 +90,9 @@ class MakeModelCommand extends Command
             }
 
             $relModelRaw = $this->ask('Related model class (e.g. App\\Models\\User or User)');
-            // normalize model class input: if not fully-qualified, assume App\Models\<Name or directory path>
             if (Str::contains($relModelRaw, '\\')) {
                 $relModel = $relModelRaw;
             } else {
-                // allow nested e.g. Admin/Product
                 $relModel = 'App\\Models\\' . str_replace('/', '\\', $relModelRaw);
             }
 
@@ -158,7 +155,6 @@ class MakeModelCommand extends Command
         // --- Generate pivot migrations as separate files if requested ---
         foreach ($this->relationships as $r) {
             if ($r['pivot']) {
-                // use small pause so timestamps differ
                 sleep(1);
                 $this->generatePivotMigration($className, $r['model'], $r['type']);
             }
@@ -172,15 +168,11 @@ class MakeModelCommand extends Command
         $this->info("\nDone.");
     }
 
-    /**
-     * Build main migration content (string).
-     */
     protected function buildMigration(string $className, array $fields, array $relationships): string
     {
         $table = Str::snake(Str::pluralStudly($className));
         $lines = [];
 
-        // Fields
         foreach ($fields as $f) {
             if ($f['type'] === 'enum') {
                 $vals = "['" . implode("','", $f['enum']) . "']";
@@ -190,7 +182,6 @@ class MakeModelCommand extends Command
             }
         }
 
-        // Relationships affecting this table
         foreach ($relationships as $r) {
             $type = $r['type'];
             $methodName = $r['name'];
@@ -203,7 +194,6 @@ class MakeModelCommand extends Command
             }
 
             if (in_array($type, ['morphOne', 'morphMany'])) {
-                // for morphs we add morphs column naming by method name (common Symfony style)
                 $morphName = Str::snake($methodName);
                 $lines[] = "            \$table->morphs('{$morphName}');";
             }
@@ -239,16 +229,12 @@ PHP;
         return $stub;
     }
 
-    /**
-     * Generate a pivot migration file for belongsToMany or morphToMany.
-     */
     protected function generatePivotMigration(string $ownClass, string $relatedModel, string $relationType)
     {
         $ownTable = Str::snake(Str::pluralStudly($ownClass));
         $relatedTable = Str::snake(Str::pluralStudly(class_basename($relatedModel)));
 
         if ($relationType === 'morphToMany') {
-            // For morphToMany, use method-based pivot naming: <own>_<morphable> (developer can adjust after)
             $pivot = Str::snake(Str::singular($ownTable)) . '_' . Str::snake(Str::singular($relatedTable));
         } else {
             $pair = [Str::snake(Str::singular($ownTable)), Str::snake(Str::singular($relatedTable))];
@@ -259,7 +245,6 @@ PHP;
         $filename = date('Y_m_d_His') . "_create_{$pivot}_table.php";
         $path = database_path('migrations/' . $filename);
 
-        // Build pivot migration content
         $ownFK = Str::snake(Str::singular($ownTable)) . '_id';
         $relatedFK = Str::snake(Str::singular($relatedTable)) . '_id';
 
@@ -293,9 +278,6 @@ PHP;
         $this->info("✔ Pivot migration created: {$filename}");
     }
 
-    /**
-     * Build model class content (string).
-     */
     protected function buildModel(string $namespace, string $className, array $fields, array $relationships): string
     {
         $fillable = [];
@@ -312,7 +294,6 @@ PHP;
             if (empty($f['fillable'])) $guarded[] = "'{$f['name']}'";
         }
 
-        // If user added any fillable, set guarded to empty array; otherwise default guarded=['*']
         if (!empty($fillable)) {
             $guardedArr = '[]';
         } else {
@@ -324,14 +305,12 @@ PHP;
         $appendsStr = implode(', ', $appends);
         $castsStr = implode(",\n        ", $casts);
 
-        // Relationship methods
         $relationMethods = '';
         foreach ($relationships as $r) {
             $method = $r['name'];
             $model = $r['model'];
             $type = $r['type'];
 
-            // Make sure model is fully-qualified when possible (if user passed short name, assume App\Models\...)
             if (!Str::startsWith($model, ['App\\', '\\'])) {
                 $modelFqn = 'App\\Models\\' . str_replace('/', '\\', $model);
             } else {
@@ -375,4 +354,5 @@ PHP;
         return $stub;
     }
 }
+
 
