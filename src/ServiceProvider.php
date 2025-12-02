@@ -2,7 +2,7 @@
 namespace YourVendor\LaravelEntityMaker;
 
 use Illuminate\Support\ServiceProvider;
-use Farhan\LaravelModelMaker\Commands\MakeModelCommand.php
+use FarhanIsrakYen\LaravelModelMaker\Commands\MakeModelCommand.php
 
 class ServiceProvider extends ServiceProvider
 {
