@@ -15,6 +15,7 @@ class MakeModelCommand extends Command
 
     protected array $fields = [];
     protected array $relationships = [];
+    protected array $indexes = [];
 
     public function __construct(Filesystem $files)
     {
@@ -35,7 +36,9 @@ class MakeModelCommand extends Command
             $this->files->makeDirectory($modelDir, 0777, true);
         }
 
-        // --- INTERACTIVE: Fields ---
+        /* ------------------------------------------
+         * FIELDS
+         * ------------------------------------------ */
         $this->info("\n=== Define fields for {$className} ===");
         while (true) {
             $fname = trim($this->ask('Field name (blank = finish)'));
@@ -48,7 +51,7 @@ class MakeModelCommand extends Command
 
             $enumValues = [];
             if ($type === 'enum') {
-                $rawEnum = $this->ask('Enum values (comma separated, e.g. draft,published)');
+                $rawEnum = $this->ask('Enum values (comma separated)');
                 $enumValues = array_values(array_filter(array_map('trim', explode(',', $rawEnum))));
             }
 
@@ -56,8 +59,8 @@ class MakeModelCommand extends Command
             $unique = $this->confirm('Unique?', false);
 
             $addToFillable = $this->confirm('Add to $fillable?', true);
-            $addToHidden = $this->confirm('Add to $hidden?', false);
-            $addToAppends = $this->confirm('Add to $appends?', false);
+            $addToHidden   = $this->confirm('Add to $hidden?', false);
+            $addToAppends  = $this->confirm('Add to $appends?', false);
 
             $addCast = $this->confirm('Add to $casts?', false);
             $castType = null;
@@ -80,21 +83,21 @@ class MakeModelCommand extends Command
             ];
         }
 
-        // --- INTERACTIVE: Relationships ---
+        /* ------------------------------------------
+         * RELATIONSHIPS
+         * ------------------------------------------ */
         $this->info("\n=== Define relationships ===");
         while ($this->confirm('Add a relationship?', false)) {
-            $relName = trim($this->ask('Method name for relationship (e.g. posts, profile)'));
+            $relName = trim($this->ask('Method name for relationship'));
             if ($relName === '') {
                 $this->warn('Empty relation name — skipping.');
                 continue;
             }
 
-            $relModelRaw = $this->ask('Related model class (e.g. App\\Models\\User or User)');
-            if (Str::contains($relModelRaw, '\\')) {
-                $relModel = $relModelRaw;
-            } else {
-                $relModel = 'App\\Models\\' . str_replace('/', '\\', $relModelRaw);
-            }
+            $relModelRaw = $this->ask('Related model class (e.g. User or App\\Models\\User)');
+            $relModel = Str::contains($relModelRaw, '\\')
+                ? $relModelRaw
+                : 'App\\Models\\' . str_replace('/', '\\', $relModelRaw);
 
             $relType = $this->choice('Relation type', [
                 'hasOne','hasMany','belongsTo','belongsToMany',
@@ -114,45 +117,52 @@ class MakeModelCommand extends Command
             ];
         }
 
-        // --- PREVIEW ---
-        $this->info("\n--- Preview: Fields ---");
-        if (empty($this->fields)) {
-            $this->line('(no fields)');
-        } else {
-            $this->table(['Name','Type','Nullable','Unique','Fillable','Hidden','Appends','Cast'], array_map(function($f) {
-                return [
-                    $f['name'],
-                    $f['type'] === 'enum' ? 'enum('.implode(',', $f['enum']).')' : $f['type'],
-                    $f['nullable'] ? 'yes' : 'no',
-                    $f['unique'] ? 'yes' : 'no',
-                    $f['fillable'] ? 'yes' : 'no',
-                    $f['hidden'] ? 'yes' : 'no',
-                    $f['append'] ? 'yes' : 'no',
-                    $f['cast'] ?? '-',
-                ];
-            }, $this->fields));
+        /* ------------------------------------------
+         * INDEXES — NEW FEATURE
+         * ------------------------------------------ */
+        $this->info("\n=== Add Indexes ===");
+        while ($this->confirm('Add an index?', false)) {
+            $cols = trim($this->ask('Columns for index (comma separated, e.g. otp_code, otp_expires_at)'));
+            $columns = array_values(array_filter(array_map('trim', explode(',', $cols))));
+
+            if (empty($columns)) {
+                $this->warn('No valid columns — skipping.');
+                continue;
+            }
+
+            $this->indexes[] = $columns;
         }
 
-        $this->info("\n--- Preview: Relationships ---");
-        if (empty($this->relationships)) {
-            $this->line('(no relationships)');
+        /* ------------------------------------------
+         * PREVIEW
+         * ------------------------------------------ */
+        $this->info("\n--- Preview: Indexes ---");
+        if (empty($this->indexes)) {
+            $this->line('(no indexes)');
         } else {
-            $this->table(['Method','Type','Related Model','Pivot?'], array_map(function($r) {
-                return [$r['name'], $r['type'], $r['model'], $r['pivot'] ? 'yes' : 'no'];
-            }, $this->relationships));
+            $this->table(['Index Columns'], array_map(fn($idx) => [implode(', ', $idx)], $this->indexes));
         }
 
-        if (! $this->confirm("\nGenerate model, migration(s) and pivot migrations (if any)?", true)) {
+        if (! $this->confirm("\nGenerate model + migrations?", true)) {
             return $this->info('Cancelled.');
         }
 
-        // --- Generate migration (main) ---
+        /* ------------------------------------------
+         * MAIN MIGRATION
+         * ------------------------------------------ */
         $migrationName = date('Y_m_d_His') . '_create_' . Str::snake(Str::pluralStudly($className)) . '_table.php';
         $migrationPath = database_path('migrations/' . $migrationName);
-        $this->files->put($migrationPath, $this->buildMigration($className, $this->fields, $this->relationships));
+
+        $this->files->put(
+            $migrationPath,
+            $this->buildMigration($className, $this->fields, $this->relationships, $this->indexes)
+        );
+
         $this->info("✔ Migration created: {$migrationName}");
 
-        // --- Generate pivot migrations as separate files if requested ---
+        /* ------------------------------------------
+         * PIVOT MIGRATIONS
+         * ------------------------------------------ */
         foreach ($this->relationships as $r) {
             if ($r['pivot']) {
                 sleep(1);
@@ -160,48 +170,74 @@ class MakeModelCommand extends Command
             }
         }
 
-        // --- Generate Model file ---
+        /* ------------------------------------------
+         * MODEL FILE
+         * ------------------------------------------ */
         $modelPath = $modelDir . $className . '.php';
-        $this->files->put($modelPath, $this->buildModel($namespace, $className, $this->fields, $this->relationships));
-        $this->info("✔ Model created: {$modelPath}");
+        $this->files->put(
+            $modelPath,
+            $this->buildModel($namespace, $className, $this->fields, $this->relationships)
+        );
 
+        $this->info("✔ Model created: {$modelPath}");
         $this->info("\nDone.");
     }
 
-    protected function buildMigration(string $className, array $fields, array $relationships): string
+    /* =================================================================
+     * BUILD MIGRATION
+     * ================================================================= */
+    protected function buildMigration(string $className, array $fields, array $relationships, array $indexes): string
     {
         $table = Str::snake(Str::pluralStudly($className));
         $lines = [];
 
+        /* --------------------------------------
+         * Fields
+         * -------------------------------------- */
         foreach ($fields as $f) {
             if ($f['type'] === 'enum') {
                 $vals = "['" . implode("','", $f['enum']) . "']";
-                $lines[] = "            \$table->enum('{$f['name']}', {$vals})" . ($f['nullable'] ? '->nullable()' : '') . ($f['unique'] ? '->unique()' : '') . ";";
+                $lines[] =
+                    "            \$table->enum('{$f['name']}', {$vals})"
+                    . ($f['nullable'] ? '->nullable()' : '')
+                    . ($f['unique'] ? '->unique()' : '')
+                    . ";";
             } else {
-                $lines[] = "            \$table->{$f['type']}('{$f['name']}')" . ($f['nullable'] ? '->nullable()' : '') . ($f['unique'] ? '->unique()' : '') . ";";
+                $lines[] =
+                    "            \$table->{$f['type']}('{$f['name']}')"
+                    . ($f['nullable'] ? '->nullable()' : '')
+                    . ($f['unique'] ? '->unique()' : '')
+                    . ";";
             }
         }
 
+        /* --------------------------------------
+         * belongsTo and morphs
+         * -------------------------------------- */
         foreach ($relationships as $r) {
-            $type = $r['type'];
-            $methodName = $r['name'];
-            $relatedModel = $r['model'];
-
-            if ($type === 'belongsTo') {
-                $relatedTable = Str::snake(Str::pluralStudly(class_basename($relatedModel)));
-                $fk = Str::snake(class_basename($relatedModel)) . '_id';
+            if ($r['type'] === 'belongsTo') {
+                $relatedTable = Str::snake(Str::pluralStudly(class_basename($r['model'])));
+                $fk = Str::snake(class_basename($r['model'])) . '_id';
                 $lines[] = "            \$table->foreignId('{$fk}')->constrained('{$relatedTable}')->cascadeOnDelete();";
             }
 
-            if (in_array($type, ['morphOne', 'morphMany'])) {
-                $morphName = Str::snake($methodName);
+            if (in_array($r['type'], ['morphOne', 'morphMany'])) {
+                $morphName = Str::snake($r['name']);
                 $lines[] = "            \$table->morphs('{$morphName}');";
             }
         }
 
+        /* --------------------------------------
+         * Indexes — NEW
+         * -------------------------------------- */
+        foreach ($indexes as $cols) {
+            $colList = "['" . implode("','", $cols) . "']";
+            $lines[] = "            \$table->index({$colList});";
+        }
+
         $schema = implode("\n", $lines);
 
-        $stub = <<<PHP
+        return <<<PHP
 <?php
 
 use Illuminate\\Database\\Migrations\\Migration;
@@ -225,22 +261,19 @@ return new class extends Migration
     }
 };
 PHP;
-
-        return $stub;
     }
 
+    /* =================================================================
+     * PIVOT GENERATOR
+     * ================================================================= */
     protected function generatePivotMigration(string $ownClass, string $relatedModel, string $relationType)
     {
         $ownTable = Str::snake(Str::pluralStudly($ownClass));
         $relatedTable = Str::snake(Str::pluralStudly(class_basename($relatedModel)));
 
-        if ($relationType === 'morphToMany') {
-            $pivot = Str::snake(Str::singular($ownTable)) . '_' . Str::snake(Str::singular($relatedTable));
-        } else {
-            $pair = [Str::snake(Str::singular($ownTable)), Str::snake(Str::singular($relatedTable))];
-            sort($pair);
-            $pivot = implode('_', $pair);
-        }
+        $pair = [Str::snake(Str::singular($ownTable)), Str::snake(Str::singular($relatedTable))];
+        sort($pair);
+        $pivot = implode('_', $pair);
 
         $filename = date('Y_m_d_His') . "_create_{$pivot}_table.php";
         $path = database_path('migrations/' . $filename);
@@ -278,6 +311,9 @@ PHP;
         $this->info("✔ Pivot migration created: {$filename}");
     }
 
+    /* =================================================================
+     * BUILD MODEL FILE
+     * ================================================================= */
     protected function buildModel(string $namespace, string $className, array $fields, array $relationships): string
     {
         $fillable = [];
@@ -288,28 +324,24 @@ PHP;
 
         foreach ($fields as $f) {
             if (!empty($f['fillable'])) $fillable[] = "'{$f['name']}'";
-            if (!empty($f['hidden'])) $hidden[] = "'{$f['name']}'";
-            if (!empty($f['append'])) $appends[] = "'{$f['name']}'";
-            if (!empty($f['cast'])) $casts[] = "'{$f['name']}' => '{$f['cast']}'";
-            if (empty($f['fillable'])) $guarded[] = "'{$f['name']}'";
+            if (!empty($f['hidden']))   $hidden[]   = "'{$f['name']}'";
+            if (!empty($f['append']))   $appends[]  = "'{$f['name']}'";
+            if (!empty($f['cast']))     $casts[]    = "'{$f['name']}' => '{$f['cast']}'";
+            if (empty($f['fillable']))  $guarded[]  = "'{$f['name']}'";
         }
 
-        if (!empty($fillable)) {
-            $guardedArr = '[]';
-        } else {
-            $guardedArr = "['*']";
-        }
+        $guardedArr = empty($fillable) ? "['*']" : "[]";
 
         $fillableStr = implode(', ', $fillable);
-        $hiddenStr = implode(', ', $hidden);
-        $appendsStr = implode(', ', $appends);
-        $castsStr = implode(",\n        ", $casts);
+        $hiddenStr   = implode(', ', $hidden);
+        $appendsStr  = implode(', ', $appends);
+        $castsStr    = implode(",\n        ", $casts);
 
         $relationMethods = '';
         foreach ($relationships as $r) {
             $method = $r['name'];
-            $model = $r['model'];
-            $type = $r['type'];
+            $model  = $r['model'];
+            $type   = $r['type'];
 
             if (!Str::startsWith($model, ['App\\', '\\'])) {
                 $modelFqn = 'App\\Models\\' . str_replace('/', '\\', $model);
@@ -327,7 +359,7 @@ PHP;
 PHP;
         }
 
-        $stub = <<<PHP
+        return <<<PHP
 <?php
 
 namespace {$namespace};
@@ -350,9 +382,5 @@ class {$className} extends Model
 {$relationMethods}
 }
 PHP;
-
-        return $stub;
     }
 }
-
-

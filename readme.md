@@ -1,6 +1,6 @@
-# Laravel Model Maker
+# Laravel Model Bender
 
-A Laravel package to interactively generate Eloquent models with fields, enums, casts, attributes, relationships, and migrations, Symfony-style.
+A Laravel package to interactively generate Eloquent models with fields, enums, casts, attributes, relationships, and migrations.
 
 ---
 
@@ -17,7 +17,7 @@ composer require farhanisrakyen/laravel-model-bender
 ### 2. Optional: Publish vendor assets (if applicable)
 
 ```bash
-php artisan vendor:publish --tag=laravel-model-maker
+php artisan vendor:publish --tag=laravel-model-bender
 ```
 
 ### 3. Ensure `app/Models` exists
