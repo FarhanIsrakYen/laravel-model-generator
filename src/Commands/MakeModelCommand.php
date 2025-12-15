@@ -359,74 +359,113 @@ PHP;
     /* -------------------------
      * Alter migration builder
      * ------------------------- */
-    protected function createAlterMigration(string $className, array $newFields, array $newRelationships, array $indexes): void
-    {
+    protected function createAlterMigration(
+        string $className,
+        array $newFields,
+        array $newRelationships,
+        array $indexes
+    ): void {
         $table = Str::snake(Str::pluralStudly($className));
-        $lines = [];
 
-        // Add fields
+        $up = [];
+        $down = [];
+
+        /* --------------------------------------
+        * Fields
+        * -------------------------------------- */
         foreach ($newFields as $f) {
             if ($f['type'] === 'enum') {
                 $vals = "['" . implode("','", $f['enum']) . "']";
-                $lines[] = "            \$table->enum('{$f['name']}', {$vals})" . ($f['nullable'] ? '->nullable()' : '') . ($f['unique'] ? '->unique()' : '') . ";";
+                $up[] =
+                    "            \$table->enum('{$f['name']}', {$vals})"
+                    . ($f['nullable'] ? '->nullable()' : '')
+                    . ($f['unique'] ? '->unique()' : '')
+                    . ";";
             } else {
-                $lines[] = "            \$table->{$f['type']}('{$f['name']}')" . ($f['nullable'] ? '->nullable()' : '') . ($f['unique'] ? '->unique()' : '') . ";";
+                $up[] =
+                    "            \$table->{$f['type']}('{$f['name']}')"
+                    . ($f['nullable'] ? '->nullable()' : '')
+                    . ($f['unique'] ? '->unique()' : '')
+                    . ";";
             }
+
+            $down[] = "            if (Schema::hasColumn('{$table}', '{$f['name']}')) { \$table->dropColumn('{$f['name']}'); }";
         }
 
-        // relationships (belongsTo => foreignId)
+        /* --------------------------------------
+        * Relationships
+        * -------------------------------------- */
         foreach ($newRelationships as $r) {
+
             if ($r['type'] === 'belongsTo') {
-                $relatedTable = Str::snake(Str::pluralStudly(class_basename($r['model'])));
                 $fk = Str::snake(class_basename($r['model'])) . '_id';
-                $lines[] = "            if (! Schema::hasColumn('{$table}', '{$fk}')) { \$table->foreignId('{$fk}')->constrained('{$relatedTable}')->cascadeOnDelete(); }";
+
+                $up[] =
+                    "            if (!Schema::hasColumn('{$table}', '{$fk}')) { " .
+                    "\$table->foreignId('{$fk}')->constrained()->cascadeOnDelete(); }";
+
+                $down[] =
+                    "            if (Schema::hasColumn('{$table}', '{$fk}')) { " .
+                    "\$table->dropForeign(['{$fk}']); \$table->dropColumn('{$fk}'); }";
             }
+
             if (in_array($r['type'], ['morphOne', 'morphMany'])) {
-                $morphName = Str::snake($r['name']);
-                $lines[] = "            \$table->morphs('{$morphName}');";
+                $morph = Str::snake($r['name']);
+
+                $up[] = "            \$table->morphs('{$morph}');";
+
+                $down[] =
+                    "            if (Schema::hasColumn('{$table}', '{$morph}_id')) { " .
+                    "\$table->dropMorphs('{$morph}'); }";
             }
         }
 
-        // indexes
+        /* --------------------------------------
+        * Indexes
+        * -------------------------------------- */
         foreach ($indexes as $cols) {
             $colList = "['" . implode("','", $cols) . "']";
-            $lines[] = "            \$table->index({$colList});";
+            $indexName = $table . '_' . implode('_', $cols) . '_index';
+
+            $up[] = "            \$table->index({$colList}, '{$indexName}');";
+            $down[] = "            \$table->dropIndex('{$indexName}');";
         }
 
-        if (empty($lines)) {
-            $this->info('Nothing to add in migration.');
+        if (empty($up)) {
+            $this->info('Nothing to migrate.');
             return;
         }
 
-        $migrationName = date('Y_m_d_His') . '_update_' . Str::snake($table) . '_table.php';
+        $migrationName = date('Y_m_d_His') . '_update_' . $table . '_table.php';
         $path = database_path('migrations/' . $migrationName);
 
-        $body = implode("\n", $lines);
+        $upBody = implode("\n", $up);
+        $downBody = implode("\n", array_reverse($down)); // reverse for safety
 
         $stub = <<<PHP
-<?php
+    <?php
 
-use Illuminate\\Database\\Migrations\\Migration;
-use Illuminate\\Database\\Schema\\Blueprint;
-use Illuminate\\Support\\Facades\\Schema;
+    use Illuminate\\Database\\Migrations\\Migration;
+    use Illuminate\\Database\\Schema\\Blueprint;
+    use Illuminate\\Support\\Facades\\Schema;
 
-return new class extends Migration
-{
-    public function up(): void
+    return new class extends Migration
     {
-        Schema::table('{$table}', function (Blueprint \$table) {
-{$body}
-        });
-    }
+        public function up(): void
+        {
+            Schema::table('{$table}', function (Blueprint \$table) {
+    {$upBody}
+            });
+        }
 
-    public function down(): void
-    {
-        Schema::table('{$table}', function (Blueprint \$table) {
-            // NOTE: manual rollback required for schema changes
-        });
-    }
-};
-PHP;
+        public function down(): void
+        {
+            Schema::table('{$table}', function (Blueprint \$table) {
+    {$downBody}
+            });
+        }
+    };
+    PHP;
 
         $this->files->put($path, $stub);
         $this->info("✔ Alter migration created: {$migrationName}");
