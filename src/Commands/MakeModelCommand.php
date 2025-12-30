@@ -5,6 +5,7 @@ namespace FarhanIsrakYen\LaravelModelMaker\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Schema;
 
 class MakeModelCommand extends Command
 {
