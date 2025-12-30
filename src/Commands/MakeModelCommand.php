@@ -256,15 +256,63 @@ class MakeModelCommand extends Command
     protected function collectIndexes(): void
     {
         $this->info("\n=== Add Indexes ===");
+        $knownColumns = $this->getKnownColumns();
+
         while ($this->confirm('Add an index?', false)) {
-            $cols = trim($this->ask('Columns for index (comma separated, e.g. otp_code, otp_expires_at)'));
-            $columns = array_values(array_filter(array_map('trim', explode(',', $cols))));
+            $colsInput = trim($this->ask('Columns for index (comma separated, e.g. otp_code, otp_expires_at)'));
+            $columns = array_values(array_filter(array_map('trim', explode(',', $colsInput))));
+
             if (empty($columns)) {
-                $this->warn('No valid columns — skipping.');
+                $this->warn('No valid columns provided — skipping.');
                 continue;
             }
+
+            $unknownColumns = [];
+            foreach ($columns as $col) {
+                if (!in_array($col, $knownColumns)) {
+                    $unknownColumns[] = $col;
+                }
+            }
+
+            if (!empty($unknownColumns)) {
+                $this->warn("The following columns are not recognized:");
+                foreach ($unknownColumns as $col) {
+                    $this->line("  • {$col}");
+                }
+                $this->line("<fg=yellow>They might not exist in the model or database yet.</>");
+
+                if (!$this->confirm('Create the index anyway? (useful if columns will be added later)', false)) {
+                    $this->line('Skipping this index.');
+                    continue;
+                }
+            }
+
             $this->indexes[] = $columns;
+            $this->info("Index on [" . implode(', ', $columns) . "] added.");
         }
+    }
+
+    protected function getKnownColumns(): array
+    {
+        $known = [];
+
+        $modelPath = $this->getModelPath();
+        if ($this->files->exists($modelPath)) {
+            $contents = $this->files->get($modelPath);
+
+            $fillable = $this->extractArrayFromModel($contents, 'fillable');
+            $casts    = array_keys($this->extractArrayFromModel($contents, 'casts'));
+            $hidden   = $this->extractArrayFromModel($contents, 'hidden');
+            $appends  = $this->extractArrayFromModel($contents, 'appends');
+
+            $known = array_unique(array_merge($fillable, $casts, $hidden, $appends));
+        }
+
+        foreach ($this->fields as $field) {
+            $known[] = $field['name'];
+        }
+
+        return array_unique($known);
     }
 
     /* -------------------------
