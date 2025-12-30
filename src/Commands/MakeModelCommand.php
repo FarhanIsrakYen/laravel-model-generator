@@ -132,52 +132,46 @@ class MakeModelCommand extends Command
     protected function collectFields(): void
     {
         $this->info("\n=== Define fields ===");
-        $table = null;
-        $existingModelColumns = [];
-        $existingDbColumns = [];
 
-        if ($this->argument('name') && $this->files->exists($this->getModelPath())) {
-            $raw = $this->argument('name');
-            $path = str_replace('\\', '/', $raw);
-            $className = Str::afterLast($path, '/');
-            $table = Str::snake(Str::pluralStudly($className));
+        $existingFields = [];
 
-            $modelPath = $this->getModelPath();
-            if ($this->files->exists($modelPath)) {
-                $contents = $this->files->get($modelPath);
-                $fillable = $this->extractArrayFromModel($contents, 'fillable');
-                $casts = array_keys($this->extractArrayFromModel($contents, 'casts'));
-                $hidden = $this->extractArrayFromModel($contents, 'hidden');
-                $appends = $this->extractArrayFromModel($contents, 'appends');
-                $existingModelColumns = array_unique(array_merge($fillable, $casts, $hidden, $appends));
-            }
+        $modelPath = $this->getModelPath();
+        if ($this->files->exists($modelPath)) {
+            $contents = $this->files->get($modelPath);
 
-            if ($table && Schema::hasTable($table)) {
-                $existingDbColumns = Schema::getColumnListing($table);
-            }
+            $fillable = $this->extractArrayFromModel($contents, 'fillable');
+            $casts    = array_keys($this->extractArrayFromModel($contents, 'casts'));
+            $hidden   = $this->extractArrayFromModel($contents, 'hidden');
+            $appends  = $this->extractArrayFromModel($contents, 'appends');
+
+            $existingFields = array_unique(array_merge($fillable, $casts, $hidden, $appends));
         }
+
+        $addedThisSession = [];
 
         while (true) {
             $fname = trim($this->ask('Field name (blank = finish)'));
             if ($fname === '') break;
 
-            if (in_array($fname, $existingModelColumns)) {
-                $this->warn("Warning: '{$fname}' is already defined in the model (e.g., fillable, casts, etc.).");
-                if (!$this->confirm('Add it anyway?', false)) {
+            if (in_array($fname, $existingFields)) {
+                $this->warn("Field '{$fname}' is already defined in the existing model.");
+                if (!$this->confirm('Add it again anyway? (e.g., to update casts/fillable)', false)) {
+                    $this->line("Skipping '{$fname}'.");
                     continue;
                 }
             }
 
-            if ($table && in_array($fname, $existingDbColumns)) {
-                $this->warn("Warning: Column '{$fname}' already exists in the '{$table}' table.");
-                if (!$this->confirm('Add migration to modify it anyway? (e.g., change type)', false)) {
+            if (in_array($fname, $addedThisSession)) {
+                $this->warn("You've already added '{$fname}' in this session.");
+                if (!$this->confirm('Add it again anyway?', false)) {
+                    $this->line("Skipping duplicate '{$fname}'.");
                     continue;
                 }
             }
 
             $type = $this->choice('Field type', [
-                'string','text','integer','bigInteger','boolean',
-                'float','double','decimal','date','datetime','json','uuid','enum'
+                'string', 'text', 'integer', 'bigInteger', 'boolean',
+                'float', 'double', 'decimal', 'date', 'datetime', 'json', 'uuid', 'enum'
             ], 0);
 
             $enumValues = [];
@@ -189,34 +183,39 @@ class MakeModelCommand extends Command
             $nullable = $this->confirm('Nullable?', false);
             $unique = $this->confirm('Unique?', false);
 
-            $addToFillable = $this->confirm('Add to $fillable?', !in_array($fname, $existingModelColumns));
+            $defaultFillable = !in_array($fname, $existingFields);
+            $addToFillable = $this->confirm('Add to $fillable?', $defaultFillable);
             $addToHidden   = $this->confirm('Add to $hidden?', false);
             $addToAppends  = $this->confirm('Add to $appends?', false);
 
-            $addCast = $this->confirm('Add to $casts?', false);
+            $addCast = $this->confirm('Add to $casts?', !isset($casts[$fname]));
             $castType = null;
             if ($addCast) {
                 $castType = $this->choice('Cast type', [
-                    'int','real','float','double','string','bool','array','json','date','datetime','collection'
+                    'int', 'real', 'float', 'double', 'string', 'bool', 'array', 'json', 'date', 'datetime', 'collection'
                 ], 0);
             }
 
             if ($type === 'boolean' && !$nullable) {
-                $this->line("<fg=yellow>Note: Boolean columns without default will fail on non-empty tables.</>");
-                $this->confirm('Proceed anyway?', true);
+                $this->line("<fg=yellow>Tip: Consider adding ->default(true) in migration for non-empty tables.</>");
             }
 
             $this->fields[] = [
-                'name' => $fname,
-                'type' => $type,
-                'enum' => $enumValues,
-                'nullable' => $nullable,
-                'unique' => $unique,
-                'fillable' => $addToFillable,
-                'hidden' => $addToHidden,
-                'append' => $addToAppends,
-                'cast' => $castType,
+                'name'      => $fname,
+                'type'      => $type,
+                'enum'      => $enumValues,
+                'nullable'  => $nullable,
+                'unique'    => $unique,
+                'fillable'  => $addToFillable,
+                'hidden'    => $addToHidden,
+                'append'    => $addToAppends,
+                'cast'      => $castType,
             ];
+
+            $addedThisSession[] = $fname;
+            if ($modelPath && $this->files->exists($modelPath)) {
+                $existingFields[] = $fname;
+            }
         }
     }
 
