@@ -499,7 +499,6 @@ PHP;
         }
         $inner = rtrim($inner, ",\n");
 
-        $replacement = "protected \${$prop} = [\n{$inner}\n    ];";
         if ($prop === 'casts') {
             $isLaravel11 = $this->isLaravel11OrHigher();
             $hasCastsMethod = preg_match('/protected\s+function\s+casts\s*\(\)\s*:\s*array/', $contents);
@@ -508,35 +507,37 @@ PHP;
             if ($useMethod) {
                 $castsInner = '';
                 foreach ($values as $k => $v) {
-                    $castsInner .= "        '{$k}' => '{$v}',\n";
+                    $castsInner .= "            '{$k}' => '{$v}',\n";
                 }
                 $castsInner = rtrim($castsInner, ",\n");
 
                 $replacement = <<<PHP
 
-    protected function casts(): array
-    {
-        return [
-{$castsInner}
-        ];
-    }
+        protected function casts(): array
+        {
+            return [
+    {$castsInner}
+            ];
+        }
 PHP;
-                $contents = preg_replace('/protected\s+\$casts\s*=\s*\[[^\]]*\][;\s]*/s', '', $contents);
+                $contents = preg_replace('/\n\s*protected\s+\$casts\s*=\s*\[[^\]]*\][;\s]*\n/', "\n", $contents);
+
                 if ($hasCastsMethod) {
-                    $pattern = '/protected\s+function\s+casts\s*\(\)\s*:\s*array\s*\{[^}]*\}/s';
-                    $contents = preg_replace($pattern, $replacement, $contents);
+                    $pattern = '/\n\s*protected\s+function\s+casts\s*\(\)\s*:\s*array\s*\{[^}]*\}/s';
+                    $contents = preg_replace($pattern, "\n{$replacement}\n", $contents);
                 } else {
                     $contents = preg_replace(
                         '/(class\s+[^{]+\{)/',
-                        "$1\n{$replacement}\n",
+                        "$1\n\n{$replacement}\n",
                         $contents,
                         1
                     );
                 }
             } else {
-                $replacement = "protected \$casts = [\n{$inner}\n    ];";
-                $contents = preg_replace('/protected\s+function\s+casts[^}]*\}/s', '', $contents);
-                $pattern = '/protected\s+\$casts\s*=\s*\[[^\]]*\][;\s]*/s';
+                $replacement = "    protected \$casts = [\n{$inner}\n    ];";
+                $contents = preg_replace('/\n\s*protected\s+function\s+casts[^}]*\}\n/', "\n", $contents);
+
+                $pattern = '/\n\s*protected\s+\$casts\s*=\s*\[[^\]]*\][;\s]*/s';
                 if (preg_match($pattern, $contents)) {
                     $contents = preg_replace($pattern, "\n    {$replacement}\n", $contents, 1);
                 } else {
@@ -549,7 +550,9 @@ PHP;
                 }
             }
         } else {
-            $pattern = '/protected\s+\$' . preg_quote($prop, '/') . '\s*=\s*\[[^\]]*\][;\s]*/s';
+            $replacement = "    protected \${$prop} = [\n{$inner}\n    ];";
+
+            $pattern = '/\n\s*protected\s+\$' . preg_quote($prop, '/') . '\s*=\s*\[[^\]]*\][;\s]*/s';
             if (preg_match($pattern, $contents)) {
                 $contents = preg_replace($pattern, "\n    {$replacement}\n", $contents, 1);
             } else {
@@ -561,7 +564,7 @@ PHP;
                 );
             }
         }
-        return $contents;
+        return preg_replace("/\n{3,}/", "\n\n", $contents);
     }
 
     /* -------------------------
