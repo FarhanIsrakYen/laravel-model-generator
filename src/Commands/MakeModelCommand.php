@@ -54,7 +54,6 @@ class MakeModelCommand extends Command
                 return $this->info('Cancelled.');
             }
 
-            // Collect only selected items
             if (Str::startsWith($choice, 'Add fields') || $choice === 'Add all (fields + relationships + indexes)') {
                 $this->collectFields();
             }
@@ -67,27 +66,21 @@ class MakeModelCommand extends Command
                 $this->collectIndexes();
             }
 
-            // Build an alter migration for added items
             if (empty($this->fields) && empty($this->relationships) && empty($this->indexes)) {
                 return $this->info('Nothing to add. Exiting.');
             }
 
-            // Update model file (inject fillable/casts/hidden/appends and relationships)
             $this->updateModelFile($modelPath, $className, $namespace, $this->fields, $this->relationships);
-
-            // Create alter migration
             $this->createAlterMigration($className, $this->fields, $this->relationships, $this->indexes);
 
             $this->info("\n✔ Update completed. Review and run `php artisan migrate`.");
             return;
         }
 
-        // If model doesn't exist — original creation flow
         $this->collectFields();
         $this->collectRelationships();
         $this->collectIndexes();
 
-        // Confirm
         $this->info("\n--- Preview: Indexes ---");
         if (empty($this->indexes)) {
             $this->line('(no indexes)');
@@ -99,7 +92,6 @@ class MakeModelCommand extends Command
             return $this->info('Cancelled.');
         }
 
-        // Create main migration file and pivot migrations and model file
         $migrationName = date('Y_m_d_His') . '_create_' . Str::snake(Str::pluralStudly($className)) . '_table.php';
         $migrationPath = database_path('migrations/' . $migrationName);
 
@@ -126,9 +118,6 @@ class MakeModelCommand extends Command
         $this->info("\nDone.");
     }
 
-    /* -------------------------
-     * Interactive collectors
-     * ------------------------- */
     protected function collectFields(): void
     {
         $this->info("\n=== Define fields ===");
@@ -374,13 +363,11 @@ class MakeModelCommand extends Command
     {
         $contents = $this->files->get($modelPath);
 
-        // extract current arrays or set defaults
         $fillable = $this->extractArrayFromModel($contents, 'fillable');
         $casts = $this->extractArrayFromModel($contents, 'casts');
         $hidden = $this->extractArrayFromModel($contents, 'hidden');
         $appends = $this->extractArrayFromModel($contents, 'appends');
 
-        // add new fields to arrays
         foreach ($newFields as $f) {
             if (!empty($f['fillable']) && !in_array($f['name'], $fillable)) $fillable[] = $f['name'];
             if (!empty($f['cast']) && !array_key_exists($f['name'], $casts)) $casts[$f['name']] = $f['cast'];
@@ -388,13 +375,11 @@ class MakeModelCommand extends Command
             if (!empty($f['append']) && !in_array($f['name'], $appends)) $appends[] = $f['name'];
         }
 
-        // replace arrays in contents
         $contents = $this->replaceArrayInModel($contents, 'fillable', $fillable);
-        $contents = $this->replaceArrayInModel($contents, 'casts', $casts, true); // casts is associative
+        $contents = $this->replaceArrayInModel($contents, 'casts', $casts, true);
         $contents = $this->replaceArrayInModel($contents, 'hidden', $hidden);
         $contents = $this->replaceArrayInModel($contents, 'appends', $appends);
 
-        // append relationship methods (avoid duplicates by method name)
         foreach ($newRelationships as $r) {
             $method = $r['name'];
             if (preg_match('/function\s+' . preg_quote($method) . '\s*\(/', $contents)) {
@@ -408,19 +393,15 @@ class MakeModelCommand extends Command
             $modelFqn = Str::startsWith($model, ['App\\', '\\']) ? $model : 'App\\Models\\' . str_replace('/', '\\', $model);
 
             $relationMethod = <<<PHP
-
-
     public function {$method}()
     {
         return \$this->{$type}({$modelFqn}::class);
     }
 
 PHP;
-            // insert before final class closing brace
             $contents = preg_replace('/}\s*$/', $relationMethod . "\n}", $contents);
         }
 
-        // write file back
         $this->files->put($modelPath, $contents);
         $this->info("✔ Model updated: {$modelPath}");
     }
@@ -463,7 +444,6 @@ PHP;
                 return $result;
             }
 
-            // normal list
             $parts = preg_split('/,(?![^\[]*\])/m', $inner);
             $values = [];
             foreach ($parts as $part) {
@@ -492,9 +472,9 @@ PHP;
         $inner = '';
         foreach ($values as $k => $v) {
             if ($associative) {
-                $inner .= "        '{$k}' => '{$v}',\n";
+                $inner .= "    '{$k}' => '{$v}',\n";
             } else {
-                $inner .= "        '{$v}',\n";
+                $inner .= "    '{$v}',\n";
             }
         }
         $inner = rtrim($inner, ",\n");
@@ -507,18 +487,17 @@ PHP;
             if ($useMethod) {
                 $castsInner = '';
                 foreach ($values as $k => $v) {
-                    $castsInner .= "            '{$k}' => '{$v}',\n";
+                    $castsInner .= "    '{$k}' => '{$v}',\n";
                 }
                 $castsInner = rtrim($castsInner, ",\n");
 
                 $replacement = <<<PHP
-
-        protected function casts(): array
-        {
-            return [
-    {$castsInner}
-            ];
-        }
+    protected function casts(): array
+    {
+        return [
+        {$castsInner}
+        ];
+    }
 PHP;
                 $contents = preg_replace('/\n\s*protected\s+\$casts\s*=\s*\[[^\]]*\][;\s]*\n/', "\n", $contents);
 
@@ -633,8 +612,6 @@ PHP;
             $conditionCheck = implode(' && ', $conditions);
 
             $up[] = "            if ({$conditionCheck}) { \$table->index({$colList}, '{$indexName}'); }";
-
-            // Down: Drop if index exists (Laravel doesn't have hasIndex, so we drop blindly — it fails silently if missing)
             $down[] = "            \$table->dropIndex('{$indexName}');";
         }
 
@@ -647,7 +624,7 @@ PHP;
         $path = database_path('migrations/' . $migrationName);
 
         $upBody = implode("\n", $up);
-        $downBody = implode("\n", array_reverse($down)); // reverse for safety
+        $downBody = implode("\n", array_reverse($down));
 
         $stub = <<<PHP
             <?php
@@ -827,11 +804,10 @@ PHP;
 
         $castsBlock = '';
         if (!empty($casts)) {
-            $castsInner = implode("\n        ", $casts);
+            $castsInner = implode("\n    ", $casts);
 
             if ($this->isLaravel11OrHigher()) {
                 $castsBlock = <<<PHP
-
     protected function casts(): array
     {
         return [
@@ -841,15 +817,13 @@ PHP;
 PHP;
             } else {
                 $castsBlock = <<<PHP
-
     protected \$casts = [
-        {$castsInner}
+    {$castsInner}
     ];
 PHP;
             }
         }
 
-        // Relationships
         $relationMethods = '';
         foreach ($relationships as $r) {
             $method = $r['name'];
@@ -861,7 +835,6 @@ PHP;
                 : 'App\\Models\\' . str_replace('/', '\\', $model);
 
             $relationMethods .= <<<PHP
-
     public function {$method}()
     {
         return \$this->{$type}({$modelFqn}::class);
