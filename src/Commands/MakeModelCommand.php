@@ -318,21 +318,50 @@ class MakeModelCommand extends Command
     protected function getKnownColumns(): array
     {
         $known = [];
+        foreach ($this->fields as $field) {
+            $known[] = $field['name'];
+        }
 
         $modelPath = $this->getModelPath();
         if ($this->files->exists($modelPath)) {
-            $contents = $this->files->get($modelPath);
+            $raw = $this->argument('name');
+            $path = str_replace('\\', '/', $raw);
+            $className = Str::afterLast($path, '/');
+            $table = Str::snake(Str::pluralStudly($className));
 
+            $migrations = $this->files->glob(database_path('migrations/*_create_' . $table . '_table.php'));
+            $alterMigrations = $this->files->glob(database_path('migrations/*_update_' . $table . '_table.php'));
+
+            $allMigrations = array_merge($migrations, $alterMigrations);
+            sort($allMigrations);
+
+            foreach ($allMigrations as $migrationPath) {
+                $contents = $this->files->get($migrationPath);
+                if (preg_match_all("/\\\$table->\w+\('([^']+)'/", $contents, $matches)) {
+                    foreach ($matches[1] as $column) {
+                        $known[] = $column;
+                    }
+                }
+                if (preg_match_all("/\\\$table->morphs\('([^']+)'\)/", $contents, $morphMatches)) {
+                    foreach ($morphMatches[1] as $morph) {
+                        $known[] = $morph . '_id';
+                        $known[] = $morph . '_type';
+                    }
+                }
+                if (preg_match_all("/\\\$table->foreignId\('([^']+)'/", $contents, $fkMatches)) {
+                    foreach ($fkMatches[1] as $fk) {
+                        $known[] = $fk;
+                    }
+                }
+            }
+
+            $contents = $this->files->get($modelPath);
             $fillable = $this->extractArrayFromModel($contents, 'fillable');
             $casts    = array_keys($this->extractArrayFromModel($contents, 'casts'));
             $hidden   = $this->extractArrayFromModel($contents, 'hidden');
             $appends  = $this->extractArrayFromModel($contents, 'appends');
 
-            $known = array_unique(array_merge($fillable, $casts, $hidden, $appends));
-        }
-
-        foreach ($this->fields as $field) {
-            $known[] = $field['name'];
+            $known = array_merge($known, $fillable, $casts, $hidden, $appends);
         }
 
         return array_unique($known);
@@ -522,11 +551,11 @@ PHP;
 
             $pattern = '/protected\s+\$' . preg_quote($prop, '/') . '\s*=\s*\[[^\]]*\][;\s]*/s';
             if (preg_match($pattern, $contents)) {
-                $contents = preg_replace($pattern, $replacement, $contents, 1);
+                $contents = preg_replace($pattern, "\n    {$replacement}\n", $contents, 1);
             } else if (!empty($inner)) {
                 $contents = preg_replace(
                     '/(class\s+\w+\s+extends\s+\w+\s*\{)/',
-                    "$1\n    {$replacement}\n",
+                    "$1\n\n    {$replacement}\n",
                     $contents,
                     1
                 );
@@ -686,7 +715,7 @@ PHP;
         foreach ($indexes as $cols) {
             $colList = "['" . implode("','", $cols) . "']";
             $indexName = $table . '_' . implode('_', $cols) . '_index';
-            $lines[] = " \$table->index({$colList}, '{$indexName}');";
+            $lines[] = "            \$table->index({$colList}, '{$indexName}');";
         }
 
         $schema = implode("\n", $lines);
